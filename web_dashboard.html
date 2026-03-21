@@ -1836,7 +1836,7 @@
         custom_css_url: '',
       });
 
-      // Set pane height proportions: K-line 60%, MACD 20%, Volume 20%
+      // Set pane height proportions: K-line 70%, MACD 15%, Volume 15%
       // onChartReady fires when main chart is ready, but MACD/Volume panes are created
       // asynchronously after studies load. We retry until all 3 panes exist.
       _tvWidget.onChartReady(function () {
@@ -1859,7 +1859,7 @@
             var containerH = document.getElementById('tv-chart-container').clientHeight || 700;
             // Subtract top toolbar (~40px) + bottom date bar (~32px) + padding
             var chartH = Math.max(containerH - 80, 380);
-            var ratios = [0.60, 0.20, 0.20];
+            var ratios = [0.70, 0.15, 0.15];
 
             panes.forEach(function (pane, i) {
               var r = ratios[i] !== undefined ? ratios[i] : (1 / panes.length);
