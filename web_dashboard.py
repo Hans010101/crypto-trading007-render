@@ -1008,6 +1008,79 @@ async def api_ai_chat(request: Request):
         return JSONResponse(content={"reply": f"大模型网络请求异常，请检查 API 密钥、网络连接或代理。\n详细报错: {str(e)}"})
 
 
+@app.get("/api/binance/oi_history")
+async def api_oi_history(symbol: str = "BTCUSDT"):
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                "https://fapi.binance.com/futures/data/openInterestHist",
+                params={"symbol": symbol, "period": "5m", "limit": 30}
+            )
+            return JSONResponse(content=resp.json(), headers={"Cache-Control": "public, max-age=30"})
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+@app.get("/api/binance/top_ls_account")
+async def api_top_ls_account(symbol: str = "BTCUSDT"):
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                "https://fapi.binance.com/futures/data/topLongShortAccountRatio",
+                params={"symbol": symbol, "period": "5m", "limit": 30}
+            )
+            return JSONResponse(content=resp.json(), headers={"Cache-Control": "public, max-age=30"})
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+@app.get("/api/binance/top_ls_position")
+async def api_top_ls_position(symbol: str = "BTCUSDT"):
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                "https://fapi.binance.com/futures/data/topLongShortPositionRatio",
+                params={"symbol": symbol, "period": "5m", "limit": 30}
+            )
+            return JSONResponse(content=resp.json(), headers={"Cache-Control": "public, max-age=30"})
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+@app.get("/api/binance/global_ls")
+async def api_global_ls(symbol: str = "BTCUSDT"):
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                "https://fapi.binance.com/futures/data/globalLongShortAccountRatio",
+                params={"symbol": symbol, "period": "5m", "limit": 30}
+            )
+            return JSONResponse(content=resp.json(), headers={"Cache-Control": "public, max-age=30"})
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+@app.get("/api/binance/taker_volume")
+async def api_taker_volume(symbol: str = "BTCUSDT"):
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                "https://fapi.binance.com/futures/data/takerlongshortRatio",
+                params={"symbol": symbol, "period": "5m", "limit": 30}
+            )
+            return JSONResponse(content=resp.json(), headers={"Cache-Control": "public, max-age=30"})
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+@app.get("/api/binance/basis")
+async def api_basis(symbol: str = "BTCUSDT"):
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                "https://fapi.binance.com/futures/data/basis",
+                params={"symbol": symbol, "period": "5m", "limit": 30, "contractType": "PERPETUAL"}
+            )
+            return JSONResponse(content=resp.json(), headers={"Cache-Control": "public, max-age=30"})
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     html_path = Path(__file__).parent / "web_dashboard.html"

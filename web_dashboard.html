@@ -570,6 +570,53 @@
     }
 
     /* Chart Modal */
+    /* ===== L/S Analysis Modal ===== */
+    .ls-modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.75); backdrop-filter: blur(4px);
+      z-index: 10001; display: none; padding: 1rem;
+      align-items: center; justify-content: center;
+    }
+    .ls-modal-overlay.active { display: flex; }
+    .ls-modal-content {
+      background: var(--bg-card); width: 98%; max-width: 1600px; height: 92vh;
+      border-radius: var(--radius-lg); overflow: hidden;
+      display: flex; flex-direction: column;
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); border: 1px solid var(--border-color);
+    }
+    .ls-modal-header {
+      padding: 0.75rem 1.5rem; display: flex; align-items: center;
+      justify-content: space-between; border-bottom: 1px solid var(--border-color);
+      background: var(--bg-card);
+    }
+    .ls-modal-header .title { font-size: 1.05rem; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 0.5rem; }
+    .ls-modal-header .actions { display: flex; gap: 0.5rem; align-items: center; }
+    .ls-modal-header .actions button {
+      background: var(--bg-hover); border: 1px solid var(--border-color); color: var(--text-secondary);
+      padding: 0.3rem 0.7rem; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.85rem;
+    }
+    .ls-modal-header .actions button:hover { color: var(--text-primary); border-color: var(--accent); }
+    .ls-modal-body { display: flex; flex: 1; overflow: hidden; }
+    .ls-charts-panel { flex: 7; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr 1fr; gap: 2px; padding: 2px; overflow: hidden; background: var(--border-color); }
+    .ls-chart-cell { background: var(--bg-card); display: flex; flex-direction: column; overflow: hidden; position: relative; }
+    .ls-chart-cell .cell-title { font-size: 0.78rem; color: var(--text-muted); padding: 4px 8px 0; font-weight: 500; }
+    .ls-chart-cell canvas { flex: 1; width: 100%; }
+    .ls-ai-panel {
+      flex: 3; border-left: 1px solid var(--border-color); padding: 1.2rem;
+      overflow-y: auto; background: var(--bg-card);
+    }
+    .ls-ai-panel h3 { margin: 0 0 0.8rem; font-size: 1rem; color: var(--text-primary); display: flex; align-items: center; gap: 0.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.6rem; }
+    .ls-ai-panel .ai-body { color: var(--text-secondary); line-height: 1.65; font-size: 0.9rem; }
+    .ls-ai-panel .ai-body strong { color: var(--text-primary); }
+    .ls-loading { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-size: 0.9rem; }
+    .ls-loading::after { content: ''; width: 20px; height: 20px; border: 2px solid var(--border-color); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin-left: 8px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (max-width: 900px) {
+      .ls-modal-body { flex-direction: column; }
+      .ls-charts-panel { flex: none; height: 60vh; grid-template-columns: 1fr; grid-template-rows: repeat(6, 1fr); }
+      .ls-ai-panel { flex: none; height: 40vh; border-left: none; border-top: 1px solid var(--border-color); }
+    }
+
     .chart-modal-overlay {
       position: fixed;
       top: 0;
@@ -1609,6 +1656,33 @@
     </div>
   </div>
 
+  <!-- L/S ANALYSIS MODAL -->
+  <div class="ls-modal-overlay" id="ls-modal">
+    <div class="ls-modal-content">
+      <div class="ls-modal-header">
+        <div class="title"><span class="icon">📊</span> <span id="ls-modal-title">多空博弈深度分析</span></div>
+        <div class="actions">
+          <button onclick="refreshLSModal()" title="刷新数据">🔄 刷新</button>
+          <button onclick="closeLSModal()" style="font-size:1.2rem;padding:0.2rem 0.6rem;">&times;</button>
+        </div>
+      </div>
+      <div class="ls-modal-body">
+        <div class="ls-charts-panel">
+          <div class="ls-chart-cell"><div class="cell-title">合约持仓量 (Open Interest)</div><canvas id="ls-chart-oi"></canvas></div>
+          <div class="ls-chart-cell"><div class="cell-title">大户多空比 — 账户数</div><canvas id="ls-chart-top-account"></canvas></div>
+          <div class="ls-chart-cell"><div class="cell-title">大户多空比 — 持仓量</div><canvas id="ls-chart-top-position"></canvas></div>
+          <div class="ls-chart-cell"><div class="cell-title">多空人数比值</div><canvas id="ls-chart-global-ls"></canvas></div>
+          <div class="ls-chart-cell"><div class="cell-title">合约主动买卖量 (Taker Buy/Sell)</div><canvas id="ls-chart-taker"></canvas></div>
+          <div class="ls-chart-cell"><div class="cell-title">基差 (Basis)</div><canvas id="ls-chart-basis"></canvas></div>
+        </div>
+        <div class="ls-ai-panel">
+          <h3><span class="icon">🤖</span> AI 多空博弈分析</h3>
+          <div class="ai-body" id="ls-ai-content"><div class="ls-loading">加载中</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- AI CHATBOT -->
   <div class="chatbot-window" id="chatbot-window">
     <div class="chat-header">
@@ -1984,7 +2058,7 @@
       <td class="price">$${fmt(t.high24h)}</td>
       <td class="price">$${fmt(t.low24h)}</td>
       ${fundingHtml}
-      ${hideLSRatio ? '' : '<td style="min-width:90px; vertical-align: middle;">' + lsHtml + '</td>'}
+      ${hideLSRatio ? '' : '<td style="min-width:90px; vertical-align: middle; cursor:pointer;" onclick="openLSModal(\'' + t.symbol + '\')" title="点击查看多空博弈深度分析">' + lsHtml + '</td>'}
       <td class="volume" title="OI 24H变化">${(function(){
         if (!t.oiChange24h && t.oiChange24h !== 0) return '<span style="color:var(--text-muted)">--</span>';
         const c = t.oiChange24h;
@@ -2535,6 +2609,297 @@
         chatSendBtn.disabled = false;
         chatInput.focus();
         chatBody.scrollTop = chatBody.scrollHeight;
+      }
+    }
+    /* ===== L/S Analysis Modal Logic ===== */
+    var _lsSymbol = '';
+    var _lsTimer = null;
+    var _lsChartInstances = {};
+    var _lsRawData = {};
+
+    function openLSModal(rawSymbol) {
+      _lsSymbol = String(rawSymbol).replace('/', '');
+      document.getElementById('ls-modal-title').textContent = _lsSymbol + ' 多空博弈深度分析';
+      document.getElementById('ls-modal').classList.add('active');
+      document.getElementById('ls-ai-content').innerHTML = '<div class="ls-loading">加载中</div>';
+      loadLSData();
+      _lsTimer = setInterval(loadLSData, 30000);
+    }
+
+    function closeLSModal() {
+      document.getElementById('ls-modal').classList.remove('active');
+      if (_lsTimer) { clearInterval(_lsTimer); _lsTimer = null; }
+      Object.keys(_lsChartInstances).forEach(function(k) { _lsChartInstances[k] = null; });
+    }
+
+    function refreshLSModal() {
+      document.querySelectorAll('.ls-chart-cell canvas').forEach(function(c) {
+        var ctx = c.getContext('2d'); ctx.clearRect(0, 0, c.width, c.height);
+      });
+      document.getElementById('ls-ai-content').innerHTML = '<div class="ls-loading">刷新中</div>';
+      loadLSData();
+    }
+
+    async function loadLSData() {
+      var sym = _lsSymbol;
+      try {
+        var [oi, topAcc, topPos, globalLS, taker, basis] = await Promise.all([
+          fetch('/api/binance/oi_history?symbol=' + sym).then(r => r.json()),
+          fetch('/api/binance/top_ls_account?symbol=' + sym).then(r => r.json()),
+          fetch('/api/binance/top_ls_position?symbol=' + sym).then(r => r.json()),
+          fetch('/api/binance/global_ls?symbol=' + sym).then(r => r.json()),
+          fetch('/api/binance/taker_volume?symbol=' + sym).then(r => r.json()),
+          fetch('/api/binance/basis?symbol=' + sym).then(r => r.json())
+        ]);
+        _lsRawData = { oi: oi, topAcc: topAcc, topPos: topPos, globalLS: globalLS, taker: taker, basis: basis };
+        renderLSChart_OI(oi);
+        renderLSChart_Ratio('ls-chart-top-account', topAcc, '大户账户多空比');
+        renderLSChart_Ratio('ls-chart-top-position', topPos, '大户持仓多空比');
+        renderLSChart_Ratio('ls-chart-global-ls', globalLS, '全市场多空人数比');
+        renderLSChart_Taker(taker);
+        renderLSChart_Basis(basis);
+        triggerLSAI();
+      } catch (e) {
+        console.error('L/S data load error:', e);
+      }
+    }
+
+    function fmtTime(ts) { var d = new Date(Number(ts)); return (d.getHours()+'').padStart(2,'0')+':'+(d.getMinutes()+'').padStart(2,'0'); }
+    function fmtNum(n) { if (Math.abs(n) >= 1e9) return (n/1e9).toFixed(2)+'B'; if (Math.abs(n) >= 1e6) return (n/1e6).toFixed(2)+'M'; if (Math.abs(n) >= 1e3) return (n/1e3).toFixed(1)+'K'; return n.toFixed(2); }
+
+    function getCanvas(id) {
+      var c = document.getElementById(id);
+      var dpr = window.devicePixelRatio || 1;
+      var rect = c.parentElement.getBoundingClientRect();
+      var w = rect.width; var h = rect.height - 20;
+      c.width = w * dpr; c.height = h * dpr; c.style.width = w + 'px'; c.style.height = h + 'px';
+      var ctx = c.getContext('2d'); ctx.scale(dpr, dpr);
+      return { ctx: ctx, w: w, h: h };
+    }
+
+    function drawAxes(ctx, w, h, labels, pad) {
+      if (!pad) pad = { l: 55, r: 10, t: 8, b: 22 };
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
+      ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+      var pw = w - pad.l - pad.r; var step = Math.max(1, Math.floor(labels.length / 6));
+      for (var i = 0; i < labels.length; i += step) {
+        var x = pad.l + (i / (labels.length - 1)) * pw;
+        ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, h - pad.b); ctx.stroke();
+        ctx.fillText(labels[i], x, h - 4);
+      }
+      return pad;
+    }
+
+    function drawLine(ctx, pts, color, w2, pad, minV, maxV) {
+      if (!pts.length) return;
+      var pw = w2 - pad.l - pad.r; var ph = w2; // placeholder
+      ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.beginPath();
+      for (var i = 0; i < pts.length; i++) {
+        var x = pad.l + (i / (pts.length - 1)) * (pw);
+        var y = pad.t + (1 - (pts[i] - minV) / (maxV - minV || 1)) * (pad.ph);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    function renderLSChart_OI(data) {
+      if (!Array.isArray(data) || !data.length) return;
+      var cv = getCanvas('ls-chart-oi'); var ctx = cv.ctx; var w = cv.w; var h = cv.h;
+      var pad = { l: 60, r: 60, t: 10, b: 22 };
+      var labels = data.map(function(d) { return fmtTime(d.timestamp); });
+      drawAxes(ctx, w, h, labels, pad);
+      var pw = w - pad.l - pad.r; var ph = h - pad.t - pad.b;
+      var ois = data.map(function(d) { return parseFloat(d.sumOpenInterest); });
+      var oivs = data.map(function(d) { return parseFloat(d.sumOpenInterestValue); });
+      var minOI = Math.min.apply(null, ois) * 0.998; var maxOI = Math.max.apply(null, ois) * 1.002;
+      var minOIV = Math.min.apply(null, oivs) * 0.998; var maxOIV = Math.max.apply(null, oivs) * 1.002;
+      // OI line (left Y)
+      ctx.strokeStyle = '#4fc3f7'; ctx.lineWidth = 1.8; ctx.beginPath();
+      for (var i = 0; i < ois.length; i++) {
+        var x = pad.l + (i / (ois.length - 1)) * pw;
+        var y = pad.t + (1 - (ois[i] - minOI) / (maxOI - minOI || 1)) * ph;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      // OI Value line (right Y)
+      ctx.strokeStyle = '#ffb74d'; ctx.lineWidth = 1.8; ctx.setLineDash([4, 3]); ctx.beginPath();
+      for (var i = 0; i < oivs.length; i++) {
+        var x = pad.l + (i / (oivs.length - 1)) * pw;
+        var y = pad.t + (1 - (oivs[i] - minOIV) / (maxOIV - minOIV || 1)) * ph;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke(); ctx.setLineDash([]);
+      // Y labels
+      ctx.fillStyle = '#4fc3f7'; ctx.font = '9px monospace'; ctx.textAlign = 'right';
+      ctx.fillText(fmtNum(maxOI), pad.l - 4, pad.t + 10);
+      ctx.fillText(fmtNum(minOI), pad.l - 4, h - pad.b - 2);
+      ctx.fillStyle = '#ffb74d'; ctx.textAlign = 'left';
+      ctx.fillText('$' + fmtNum(maxOIV), w - pad.r + 4, pad.t + 10);
+      ctx.fillText('$' + fmtNum(minOIV), w - pad.r + 4, h - pad.b - 2);
+      // Legend
+      ctx.font = '10px sans-serif';
+      ctx.fillStyle = '#4fc3f7'; ctx.fillText('● 持仓量', pad.l + 5, pad.t + 10);
+      ctx.fillStyle = '#ffb74d'; ctx.fillText('● 持仓价值', pad.l + 75, pad.t + 10);
+    }
+
+    function renderLSChart_Ratio(canvasId, data, title) {
+      if (!Array.isArray(data) || !data.length) return;
+      var cv = getCanvas(canvasId); var ctx = cv.ctx; var w = cv.w; var h = cv.h;
+      var pad = { l: 55, r: 10, t: 10, b: 22 };
+      var labels = data.map(function(d) { return fmtTime(d.timestamp); });
+      drawAxes(ctx, w, h, labels, pad);
+      var pw = w - pad.l - pad.r; var ph = h - pad.t - pad.b;
+      var barW = Math.max(4, pw / data.length * 0.7);
+      var ratios = data.map(function(d) { return parseFloat(d.longShortRatio); });
+      var minR = Math.min.apply(null, ratios) * 0.95; var maxR = Math.max.apply(null, ratios) * 1.05;
+      // Stacked bars
+      for (var i = 0; i < data.length; i++) {
+        var x = pad.l + (i / (data.length - 1)) * pw - barW / 2;
+        var longPct = parseFloat(data[i].longAccount || data[i].longPosition || 50);
+        var shortPct = 100 - longPct;
+        var barH = ph * 0.65;
+        var barTop = pad.t + ph * 0.1;
+        var longH = barH * (longPct / 100); var shortH = barH * (shortPct / 100);
+        ctx.fillStyle = 'rgba(38,166,91,0.6)'; ctx.fillRect(x, barTop, barW, longH);
+        ctx.fillStyle = 'rgba(239,83,80,0.6)'; ctx.fillRect(x, barTop + longH, barW, shortH);
+      }
+      // Ratio line overlay
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath();
+      for (var i = 0; i < ratios.length; i++) {
+        var x = pad.l + (i / (ratios.length - 1)) * pw;
+        var y = pad.t + (1 - (ratios[i] - minR) / (maxR - minR || 1)) * ph;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      // Y label for ratio
+      ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '9px monospace'; ctx.textAlign = 'right';
+      ctx.fillText(maxR.toFixed(3), pad.l - 4, pad.t + 10);
+      ctx.fillText(minR.toFixed(3), pad.l - 4, h - pad.b - 2);
+      // Legend
+      ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+      ctx.fillStyle = 'rgba(38,166,91,0.8)'; ctx.fillText('■ 多', pad.l + 5, pad.t + 10);
+      ctx.fillStyle = 'rgba(239,83,80,0.8)'; ctx.fillText('■ 空', pad.l + 30, pad.t + 10);
+      ctx.fillStyle = '#fff'; ctx.fillText('— 比值', pad.l + 55, pad.t + 10);
+    }
+
+    function renderLSChart_Taker(data) {
+      if (!Array.isArray(data) || !data.length) return;
+      var cv = getCanvas('ls-chart-taker'); var ctx = cv.ctx; var w = cv.w; var h = cv.h;
+      var pad = { l: 55, r: 10, t: 10, b: 22 };
+      var labels = data.map(function(d) { return fmtTime(d.timestamp); });
+      drawAxes(ctx, w, h, labels, pad);
+      var pw = w - pad.l - pad.r; var ph = h - pad.t - pad.b;
+      var barW = Math.max(3, pw / data.length * 0.35);
+      var buys = data.map(function(d) { return parseFloat(d.buyVol); });
+      var sells = data.map(function(d) { return parseFloat(d.sellVol); });
+      var allVols = buys.concat(sells);
+      var maxV = Math.max.apply(null, allVols) * 1.05;
+      for (var i = 0; i < data.length; i++) {
+        var cx = pad.l + (i / (data.length - 1)) * pw;
+        var bH = (buys[i] / maxV) * ph; var sH = (sells[i] / maxV) * ph;
+        ctx.fillStyle = 'rgba(38,166,91,0.7)';
+        ctx.fillRect(cx - barW - 0.5, pad.t + ph - bH, barW, bH);
+        ctx.fillStyle = 'rgba(239,83,80,0.7)';
+        ctx.fillRect(cx + 0.5, pad.t + ph - sH, barW, sH);
+      }
+      ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '9px monospace'; ctx.textAlign = 'right';
+      ctx.fillText(fmtNum(maxV), pad.l - 4, pad.t + 10);
+      ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+      ctx.fillStyle = 'rgba(38,166,91,0.8)'; ctx.fillText('■ 买', pad.l + 5, pad.t + 10);
+      ctx.fillStyle = 'rgba(239,83,80,0.8)'; ctx.fillText('■ 卖', pad.l + 30, pad.t + 10);
+    }
+
+    function renderLSChart_Basis(data) {
+      if (!Array.isArray(data) || !data.length) return;
+      var cv = getCanvas('ls-chart-basis'); var ctx = cv.ctx; var w = cv.w; var h = cv.h;
+      var pad = { l: 60, r: 60, t: 10, b: 22 };
+      var labels = data.map(function(d) { return fmtTime(d.timestamp); });
+      drawAxes(ctx, w, h, labels, pad);
+      var pw = w - pad.l - pad.r; var ph = h - pad.t - pad.b;
+      var futures = data.map(function(d) { return parseFloat(d.futuresPrice); });
+      var indices = data.map(function(d) { return parseFloat(d.indexPrice); });
+      var basisRates = data.map(function(d) { return parseFloat(d.basisRate) * 100; });
+      var allPrices = futures.concat(indices);
+      var minP = Math.min.apply(null, allPrices) * 0.9999; var maxP = Math.max.apply(null, allPrices) * 1.0001;
+      var minBR = Math.min.apply(null, basisRates); var maxBR = Math.max.apply(null, basisRates);
+      // Futures price line
+      ctx.strokeStyle = '#4fc3f7'; ctx.lineWidth = 1.5; ctx.beginPath();
+      for (var i = 0; i < futures.length; i++) {
+        var x = pad.l + (i / (futures.length - 1)) * pw;
+        var y = pad.t + (1 - (futures[i] - minP) / (maxP - minP || 1)) * ph;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      // Index price line
+      ctx.strokeStyle = '#ce93d8'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]); ctx.beginPath();
+      for (var i = 0; i < indices.length; i++) {
+        var x = pad.l + (i / (indices.length - 1)) * pw;
+        var y = pad.t + (1 - (indices[i] - minP) / (maxP - minP || 1)) * ph;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke(); ctx.setLineDash([]);
+      // Basis rate as area
+      ctx.fillStyle = 'rgba(255,183,77,0.15)'; ctx.strokeStyle = '#ffb74d'; ctx.lineWidth = 1; ctx.beginPath();
+      var zeroY = pad.t + (1 - (0 - minBR) / (maxBR - minBR || 1)) * ph;
+      ctx.moveTo(pad.l, zeroY);
+      for (var i = 0; i < basisRates.length; i++) {
+        var x = pad.l + (i / (basisRates.length - 1)) * pw;
+        var y = pad.t + (1 - (basisRates[i] - minBR) / (maxBR - minBR || 1)) * ph;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(pad.l + pw, zeroY); ctx.closePath(); ctx.fill(); ctx.stroke();
+      // Labels
+      ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '9px monospace'; ctx.textAlign = 'right';
+      ctx.fillText('$' + fmtNum(maxP), pad.l - 4, pad.t + 10);
+      ctx.fillText('$' + fmtNum(minP), pad.l - 4, h - pad.b - 2);
+      ctx.fillStyle = '#ffb74d'; ctx.textAlign = 'left';
+      ctx.fillText(maxBR.toFixed(4) + '%', w - pad.r + 4, pad.t + 10);
+      ctx.fillText(minBR.toFixed(4) + '%', w - pad.r + 4, h - pad.b - 2);
+      ctx.font = '10px sans-serif';
+      ctx.fillStyle = '#4fc3f7'; ctx.fillText('● 合约价', pad.l + 5, pad.t + 10);
+      ctx.fillStyle = '#ce93d8'; ctx.fillText('● 指数价', pad.l + 65, pad.t + 10);
+      ctx.fillStyle = '#ffb74d'; ctx.fillText('● 基差率', pad.l + 130, pad.t + 10);
+    }
+
+    async function triggerLSAI() {
+      var el = document.getElementById('ls-ai-content');
+      el.innerHTML = '<div class="ls-loading">AI 分析生成中</div>';
+      var d = _lsRawData;
+      var summary = _lsSymbol + ' 最近30个5分钟周期数据摘要:\n';
+      if (d.oi && d.oi.length) {
+        var lastOI = d.oi[d.oi.length - 1]; var firstOI = d.oi[0];
+        summary += '持仓量: ' + parseFloat(lastOI.sumOpenInterest).toFixed(0) + ' (价值$' + (parseFloat(lastOI.sumOpenInterestValue)/1e6).toFixed(1) + 'M), 变化: ' + ((parseFloat(lastOI.sumOpenInterest)/parseFloat(firstOI.sumOpenInterest)-1)*100).toFixed(2) + '%\n';
+      }
+      if (d.topAcc && d.topAcc.length) {
+        var last = d.topAcc[d.topAcc.length - 1];
+        summary += '大户账户多空比: ' + parseFloat(last.longShortRatio).toFixed(3) + ' (多' + last.longAccount + '% / 空' + last.shortAccount + '%)\n';
+      }
+      if (d.topPos && d.topPos.length) {
+        var last = d.topPos[d.topPos.length - 1];
+        summary += '大户持仓多空比: ' + parseFloat(last.longShortRatio).toFixed(3) + ' (多' + last.longAccount + '% / 空' + last.shortAccount + '%)\n';
+      }
+      if (d.globalLS && d.globalLS.length) {
+        var last = d.globalLS[d.globalLS.length - 1];
+        summary += '全市场多空人数比: ' + parseFloat(last.longShortRatio).toFixed(3) + ' (多' + last.longAccount + '% / 空' + last.shortAccount + '%)\n';
+      }
+      if (d.taker && d.taker.length) {
+        var last = d.taker[d.taker.length - 1];
+        summary += '主动买卖比: ' + parseFloat(last.buySellRatio).toFixed(3) + ' (买量' + parseFloat(last.buyVol).toFixed(0) + ' / 卖量' + parseFloat(last.sellVol).toFixed(0) + ')\n';
+      }
+      if (d.basis && d.basis.length) {
+        var last = d.basis[d.basis.length - 1];
+        summary += '基差率: ' + (parseFloat(last.basisRate)*100).toFixed(4) + '% (合约$' + parseFloat(last.futuresPrice).toFixed(2) + ' / 指数$' + parseFloat(last.indexPrice).toFixed(2) + ')\n';
+      }
+      var prompt = '请根据以下' + _lsSymbol + '合约的实时多空博弈数据，给出专业分析：\n' + summary + '\n要求：1)分析多空力量对比 2)识别异常信号 3)给出短线操作建议 4)风险提示。用中文回答，简明扼要。';
+      try {
+        var resp = await fetch('/api/ai/chat', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: prompt })
+        });
+        var result = await resp.json();
+        el.innerHTML = result.reply || '<span style="color:var(--loss)">分析生成失败</span>';
+      } catch (e) {
+        el.innerHTML = '<span style="color:var(--loss)">AI 服务连接失败: ' + e.message + '</span>';
       }
     }
   </script>
