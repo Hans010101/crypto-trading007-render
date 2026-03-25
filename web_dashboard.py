@@ -1074,7 +1074,7 @@ async def api_basis(symbol: str = "BTCUSDT"):
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(
                 "https://fapi.binance.com/futures/data/basis",
-                params={"symbol": symbol, "period": "5m", "limit": 30, "contractType": "PERPETUAL"}
+                params={"pair": symbol, "period": "5m", "limit": 30, "contractType": "PERPETUAL"}
             )
             return JSONResponse(content=resp.json(), headers={"Cache-Control": "public, max-age=30"})
     except Exception as e:
