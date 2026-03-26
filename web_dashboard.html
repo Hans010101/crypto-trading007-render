@@ -2744,21 +2744,41 @@
     function renderRatio(canvasId, valId, data) {
       if (!Array.isArray(data) || !data.length) return;
       var cv = _cv(canvasId); var ctx = cv.ctx; var w = cv.w; var h = cv.h;
-      var pad = { l: 50, r: 12, t: 25, b: 28 };
+      var pad = { l: 45, r: 50, t: 25, b: 28 };
       var pw = w - pad.l - pad.r; var ph = h - pad.t - pad.b;
       var labels = data.map(function(d){return _fT(d.timestamp);});
       var ratios = data.map(function(d){return parseFloat(d.longShortRatio);});
       var minR = Math.min.apply(null, ratios)*0.97, maxR = Math.max.apply(null, ratios)*1.03;
-      _grid(ctx, w, h, pad, labels, minR, maxR, function(v){return v.toFixed(3);});
+      // Draw 0%-100% grid on left Y axis, ratio on right Y axis
+      for (var i = 0; i <= 4; i++) {
+        var y = pad.t + (i / 4) * ph;
+        ctx.strokeStyle = _C.grid; ctx.lineWidth = 0.5; ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
+        ctx.fillStyle = _C.text; ctx.font = '10px monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        ctx.fillText((100 - i * 25) + '%', pad.l - 6, y);
+        ctx.fillStyle = _C.textBright; ctx.textAlign = 'left';
+        ctx.fillText((maxR - (i/4)*(maxR-minR)).toFixed(3), w - pad.r + 6, y);
+      }
+      // X labels
+      var step = Math.max(1, Math.floor(labels.length / 6));
+      ctx.fillStyle = _C.text; ctx.font = '10px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      for (var i = 0; i < labels.length; i += step) { ctx.fillText(labels[i], pad.l + (i / Math.max(1,labels.length-1)) * pw, h - pad.b + 4); }
+      // 100% stacked bars: longAccount is 0-1 fraction
       var barW = Math.max(5, pw / data.length * 0.75);
       for (var i = 0; i < data.length; i++) {
         var x = pad.l + (i / Math.max(1,data.length-1)) * pw - barW/2;
-        var longPct = parseFloat(data[i].longAccount || data[i].longPosition || 50);
-        var shortPct = 100 - longPct;
-        var barH = ph * 0.7; var barTop = pad.t + ph * 0.15;
-        ctx.fillStyle = 'rgba(38,166,154,0.85)'; ctx.fillRect(x, barTop, barW, barH * longPct / 100);
-        ctx.fillStyle = 'rgba(239,83,80,0.85)'; ctx.fillRect(x, barTop + barH * longPct / 100, barW, barH * shortPct / 100);
+        var longFrac = parseFloat(data[i].longAccount || data[i].longPosition || 0.5);
+        var shortFrac = parseFloat(data[i].shortAccount || data[i].shortPosition || 0.5);
+        if (longFrac > 1) { longFrac /= 100; shortFrac /= 100; }
+        var greenH = ph * longFrac;
+        var redH = ph * shortFrac;
+        // Green (long) from bottom up
+        ctx.fillStyle = 'rgba(38,166,154,0.85)';
+        ctx.fillRect(x, pad.t + ph - greenH, barW, greenH);
+        // Red (short) from top down
+        ctx.fillStyle = 'rgba(239,83,80,0.85)';
+        ctx.fillRect(x, pad.t, barW, redH);
       }
+      // Ratio line overlay (right Y axis scale)
       _line(ctx, ratios, '#1f2937', 2, pad, w, h, minR, maxR);
       _legend(ctx, [['■ 多', _C.green], ['■ 空', _C.red], ['— 比值', '#1f2937']], pad.l + 2, 12);
       var last = ratios[ratios.length - 1]; var el = document.getElementById(valId);
