@@ -809,7 +809,6 @@ async def api_ai_analysis(symbol: str):
 @app.get("/api/ai/ls_analysis")
 async def api_ai_ls_analysis(symbol: str):
     """Template-based L/S analysis without LLM call"""
-    import aiohttp
     base = "https://fapi.binance.com/futures/data"
     urls = {
         "oi": f"{base}/openInterestHist?symbol={symbol}&period=5m&limit=30",
@@ -821,10 +820,10 @@ async def api_ai_ls_analysis(symbol: str):
     }
     d = {}
     try:
-        async with aiohttp.ClientSession() as sess:
+        async with httpx.AsyncClient(timeout=15) as client:
             for k, url in urls.items():
-                async with sess.get(url) as r:
-                    d[k] = await r.json() if r.status == 200 else []
+                r = await client.get(url)
+                d[k] = r.json() if r.status_code == 200 else []
     except Exception:
         return JSONResponse(content={"analysis": "数据获取失败，请稍后重试。"})
 
