@@ -729,9 +729,94 @@ async def api_ai_analysis(symbol: str):
     return JSONResponse(content={"analysis": analysis})
 
 
+def _parse_ls_ai_response(raw_text: str):
+    """Parse LLM JSON response with fallback."""
+    cleaned = re.sub(r'^```(?:json)?\s*', '', raw_text.strip())
+    cleaned = re.sub(r'\s*```$', '', cleaned)
+    try:
+        data = json.loads(cleaned)
+        required = ['direction', 'bullCount', 'analysis', 'strategy']
+        if all(k in data for k in required):
+            return data
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return None
+
+
+LS_AI_ANALYSIS_PROMPT = """你是一位专业的加密货币合约交易分析师。根据以下多空博弈数据，输出结构化的深度分析。
+
+## 输入数据说明
+- OI (持仓量): openInterest, oiChange (变化百分比), oiChangeValue (变化金额)
+- 大户账户多空比: topTraderAccountRatio (>1偏多, <1偏空)
+- 大户持仓多空比: topTraderPositionRatio (>1偏多, <1偏空)
+- 全市场多空人数比: globalLongShortRatio (>1偏多, <1偏空)
+- 主动买卖比: takerBuySellRatio (>1买方主导, <1卖方主导)
+- 基差率: basisRate (正=升水看涨, 负=贴水看跌)
+
+## 判断规则
+对以下 6 项逐一判断多/空：
+1. OI变化: 增仓=多, 减仓=空
+2. 大户账户比: >1=多, <1=空
+3. 大户持仓比: >1=多, <1=空
+4. 全市场人数比: >1=多, <1=空（注意：散户极度偏多时反而是风险信号）
+5. 主动买卖比: >1=多, <1=空
+6. 基差率: >0=多, <0=空
+
+看多数量：
+- 5-6项看多 = "偏多"
+- 3-4项看多 = 根据权重综合判断，偏多则"偏多"，偏空则"偏空"，均衡则"震荡"
+- 0-2项看多 = "偏空"
+
+## 输出要求
+请严格按以下 JSON 格式输出，不要输出任何其他内容：
+
+```json
+{
+  "direction": "偏多" | "偏空" | "震荡",
+  "bullCount": 4,
+  "totalCount": 6,
+  "conflictNote": "持仓量偏空、基差偏空，注意分歧",
+  "analysis": {
+    "funding": {
+      "title": "资金面",
+      "content": "OI 减仓 -1.1%（$1.89M），部分资金撤离。主动买卖比 1.770，买方占明显优势，多头在主动进攻。资金撤离但买方仍在，可能是空头平仓，下跌空间有限。"
+    },
+    "institution": {
+      "title": "机构面",
+      "content": "大户账户比 1.507（多60.1%），持仓比 1.070（多51.7%），方向一致偏多，机构整体看好后市。"
+    },
+    "sentiment": {
+      "title": "情绪面",
+      "content": "散户人数比 1.789（多64.1%），散户极度偏多，需警惕反向收割风险。基差 -0.1300% 贴水，合约折价，市场情绪偏悲观。散户偏多但基差贴水，情绪面出现背离，多头需谨慎。"
+    }
+  },
+  "anomalies": [
+    "持仓量短时骤降 17.8%，资金撤离信号明显",
+    "大户账户看空但持仓看多，可能在底部建仓",
+    "散户极度偏多 (64.1%)，警惕反向收割"
+  ],
+  "strategy": {
+    "summary": "多方略占优势，但持仓量偏空、基差偏空，存在分歧。方向偏多但分歧尚存，建议轻仓试探或等待信号进一步确认。",
+    "action": "轻仓试多",
+    "position": "仓位 ≤15%",
+    "stoploss": "严格止损"
+  }
+}
+```
+
+## 分析要求
+1. 资金面：综合 OI变化 和 主动买卖比，分析资金流向和买卖力量对比，给出结论性判断
+2. 机构面：综合 大户账户比 和 大户持仓比，分析机构态度，注意账户比和持仓比方向不一致的情况
+3. 情绪面：综合 全市场人数比 和 基差率，分析散户情绪和市场预期，注意背离信号
+4. 异常信号：找出数据中的矛盾或极端值（如OI骤降>10%、散户比>1.5、大户账户与持仓方向相反等）
+5. 策略建议：根据综合判断给出操作方向、仓位建议、风控提示
+6. content 中要包含具体数据数值，不要只说定性结论
+7. 如果某个维度的两个指标方向矛盾，要明确指出并分析原因"""
+
+
 @app.get("/api/ai/ls_analysis")
 async def api_ai_ls_analysis(symbol: str):
-    """Template-based L/S analysis without LLM call"""
+    """L/S analysis: try LLM structured JSON, fallback to template."""
     base = "https://fapi.binance.com/futures/data"
     urls = {
         "oi": f"{base}/openInterestHist?symbol={symbol}&period=5m&limit=30",
@@ -748,7 +833,7 @@ async def api_ai_ls_analysis(symbol: str):
                 r = await client.get(url)
                 d[k] = r.json() if r.status_code == 200 else []
     except Exception:
-        return JSONResponse(content={"analysis": "数据获取失败，请稍后重试。"})
+        return JSONResponse(content={"analysis": "数据获取失败，请稍后重试。", "structured": None})
 
     def safe_f(arr, key, idx=-1):
         try: return float(arr[idx][key])
@@ -757,6 +842,7 @@ async def api_ai_ls_analysis(symbol: str):
     oi_last = safe_f(d["oi"], "sumOpenInterestValue")
     oi_first = safe_f(d["oi"], "sumOpenInterestValue", 0)
     oi_chg = ((oi_last / oi_first - 1) * 100) if oi_first else 0
+    oi_chg_val = oi_last - oi_first
 
     top_acc_r = safe_f(d["topAcc"], "longShortRatio")
     top_acc_l = safe_f(d["topAcc"], "longAccount") * 100
@@ -767,25 +853,58 @@ async def api_ai_ls_analysis(symbol: str):
     taker_r = safe_f(d["taker"], "buySellRatio")
     basis_rate = safe_f(d["basis"], "basisRate") * 100
 
-    # Determine overall bias
+    def fmt_v(v):
+        if abs(v) >= 1e9: return f"${v/1e9:.2f}B"
+        if abs(v) >= 1e6: return f"${v/1e6:.2f}M"
+        return f"${v:,.0f}"
+
+    # Build data summary for LLM
+    data_summary = f"""## {symbol} 多空博弈数据
+- 持仓量(OI): {fmt_v(oi_last)}，变化 {oi_chg:+.2f}%（{fmt_v(oi_chg_val)}）
+- 大户账户多空比: {top_acc_r:.3f}（多头账户占比 {top_acc_l:.1f}%）
+- 大户持仓多空比: {top_pos_r:.3f}（多头持仓占比 {top_pos_l:.1f}%）
+- 全市场多空人数比: {global_r:.3f}（多头人数占比 {global_l:.1f}%）
+- 主动买卖比: {taker_r:.3f}
+- 基差率: {basis_rate:.4f}%"""
+
+    # Try LLM call
+    api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("DEEPSEEK_API_KEY")
+    api_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
+    model = os.environ.get("LLM_MODEL", "gpt-3.5-turbo")
+
+    if os.environ.get("DEEPSEEK_API_KEY") and not os.environ.get("OPENAI_API_KEY"):
+        api_base = "https://api.deepseek.com/v1"
+        model = "deepseek-chat"
+
+    structured = None
+    if api_key:
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    f"{api_base.rstrip('/')}/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json={
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": LS_AI_ANALYSIS_PROMPT},
+                            {"role": "user", "content": data_summary}
+                        ]
+                    }
+                )
+                if resp.status_code == 200:
+                    raw = resp.json()["choices"][0]["message"]["content"]
+                    structured = _parse_ls_ai_response(raw)
+        except Exception:
+            pass
+
+    # Always build template fallback HTML
     bull_signals = sum([top_acc_r > 1, top_pos_r > 1, global_r > 1, taker_r > 1, oi_chg > 0, basis_rate > 0])
     if bull_signals >= 4:
-        bias = "偏多"
-        bias_color = "var(--gain)"
-        bias_icon = "🟢"
+        bias, bias_color, bias_icon = "偏多", "var(--gain)", "🟢"
     elif bull_signals <= 2:
-        bias = "偏空"
-        bias_color = "var(--loss)"
-        bias_icon = "🔴"
+        bias, bias_color, bias_icon = "偏空", "var(--loss)", "🔴"
     else:
-        bias = "多空均衡"
-        bias_color = "var(--text-muted)"
-        bias_icon = "🟡"
-
-    def fmt_v(v):
-        if abs(v) >= 1e9: return f"{v/1e9:.2f}B"
-        if abs(v) >= 1e6: return f"{v/1e6:.2f}M"
-        return f"{v:,.0f}"
+        bias, bias_color, bias_icon = "多空均衡", "var(--text-muted)", "🟡"
 
     def clr(v, threshold=0):
         return "var(--gain)" if v > threshold else ("var(--loss)" if v < threshold else "var(--text-muted)")
@@ -801,7 +920,6 @@ async def api_ai_ls_analysis(symbol: str):
     taker_desc = "主动买入力量较强" if taker_r > 1 else "主动卖出力量较强"
     basis_desc = "正溢价（看涨预期）" if basis_rate > 0 else "负溢价（看跌预期）"
 
-    # Build anomaly signals
     anomalies = []
     if abs(oi_chg) > 3:
         anomalies.append(f"持仓量短时{'暴增' if oi_chg > 0 else '骤降'} {abs(oi_chg):.1f}%，{'新资金入场' if oi_chg > 0 else '资金撤离'}信号明显")
@@ -824,7 +942,7 @@ async def api_ai_ls_analysis(symbol: str):
     <div style="margin-bottom:14px;">
       <strong style="color:var(--text-primary);">📊 持仓量分析</strong><br>
       <div style="color:var(--text-secondary);margin-top:4px;">
-        持仓总价值 <span style="color:var(--text-primary);font-weight:600;">${fmt_v(oi_last)}</span>，
+        持仓总价值 <span style="color:var(--text-primary);font-weight:600;">{fmt_v(oi_last)}</span>，
         2.5h 内<span style="color:{clr(oi_chg)};font-weight:600;">{oi_desc} {oi_chg:+.2f}%</span>。
         {'资金持续流入，市场参与度增加，利于趋势延续。' if oi_chg > 0 else '资金退出，市场分歧加大，短线波动可能加剧。'}
       </div>
@@ -868,7 +986,7 @@ async def api_ai_ls_analysis(symbol: str):
       </div>
     </div>
     """
-    return JSONResponse(content={"analysis": html})
+    return JSONResponse(content={"analysis": html, "structured": structured})
 
 
 @app.get("/api/system/info")

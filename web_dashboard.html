@@ -2322,13 +2322,68 @@
       el.style.color = lastBR >= 0 ? _C.green : _C.red; el.textContent = lastBR.toFixed(4) + '%';
     }
 
+    function renderLSAnalysisV2(data, container) {
+      if (!data) return false;
+      var dir = data.direction || '震荡';
+      var colorMap = {
+        '偏多': { borderColor:'#1D9E75', bgColor:'#E1F5EE', titleColor:'#085041', subtitleColor:'#0F6E56', tagBg:'#E1F5EE', tagColor:'#085041', icon:'<path d="M8 3L13 10H3L8 3Z" fill="white"/>', circleBg:'#1D9E75' },
+        '偏空': { borderColor:'#E24B4A', bgColor:'#FCEBEB', titleColor:'#791F1F', subtitleColor:'#A32D2D', tagBg:'#FCEBEB', tagColor:'#791F1F', icon:'<path d="M8 13L3 6H13L8 13Z" fill="white"/>', circleBg:'#E24B4A' },
+        '震荡': { borderColor:'#888780', bgColor:'#F1EFE8', titleColor:'#444441', subtitleColor:'#5F5E5A', tagBg:'#F1EFE8', tagColor:'#444441', icon:'<rect x="3" y="7" width="10" height="2" rx="1" fill="white"/>', circleBg:'#888780' }
+      };
+      var c = colorMap[dir] || colorMap['震荡'];
+      var a = data.analysis || {};
+      var s = data.strategy;
+      var html = '<div style="border-left:4px solid '+c.borderColor+';background:'+c.bgColor+';border-radius:0 8px 8px 0;padding:16px 20px;margin-bottom:20px;">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;">'
+        + '<div><div style="font-size:22px;font-weight:600;color:'+c.titleColor+';">'+dir+'</div>'
+        + '<div style="font-size:13px;color:'+c.subtitleColor+';margin-top:4px;">'+(data.bullCount||0)+'/'+(data.totalCount||6)+' 项看多'+(data.conflictNote ? ' · '+data.conflictNote : '')+'</div></div>'
+        + '<div style="width:36px;height:36px;border-radius:50%;background:'+c.circleBg+';display:flex;align-items:center;justify-content:center;">'
+        + '<svg width="16" height="16" viewBox="0 0 16 16" fill="none">'+c.icon+'</svg></div></div></div>';
+      html += '<div style="font-size:13px;color:#999;margin-bottom:12px;letter-spacing:0.5px;">多空力量解读</div>';
+      var dims = ['funding','institution','sentiment'];
+      for (var i=0; i<dims.length; i++) {
+        var dim = a[dims[i]];
+        if (dim) {
+          html += '<div style="margin-bottom:20px;"><div style="font-size:15px;font-weight:600;color:#333;margin-bottom:8px;">'+dim.title+'</div>'
+            + '<div style="font-size:14px;color:#666;line-height:1.7;">'+dim.content+'</div></div>';
+        }
+      }
+      if (data.anomalies && data.anomalies.length > 0) {
+        html += '<div style="border-top:1px solid #eee;margin:20px 0;"></div>'
+          + '<div style="margin-bottom:20px;"><div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">'
+          + '<span style="font-size:16px;">⚠️</span><span style="font-size:15px;font-weight:600;color:#333;">异常信号检测</span></div>'
+          + '<div style="background:#FFF8E6;border-radius:8px;padding:12px 16px;"><div style="font-size:13px;color:#8B6914;line-height:1.8;">';
+        for (var j=0; j<data.anomalies.length; j++) {
+          html += '<div style="margin-bottom:4px;">⚡ '+data.anomalies[j]+'</div>';
+        }
+        html += '</div></div></div>';
+      }
+      if (s) {
+        html += '<div style="border-top:1px solid #eee;margin:20px 0;"></div>'
+          + '<div style="background:#f8f8f6;border-radius:12px;padding:16px 20px;">'
+          + '<div style="font-size:15px;font-weight:600;color:#333;margin-bottom:10px;">📌 策略参考</div>'
+          + '<div style="font-size:14px;color:#666;line-height:1.7;margin-bottom:14px;">'+(s.summary||'')+'</div>'
+          + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+          + '<span style="background:'+c.tagBg+';color:'+c.tagColor+';font-size:13px;padding:6px 14px;border-radius:20px;font-weight:500;">'+(s.action||'')+'</span>'
+          + '<span style="background:#fff;color:#666;font-size:13px;padding:6px 14px;border-radius:20px;border:1px solid #eee;">'+(s.position||'')+'</span>'
+          + '<span style="background:#fff;color:#666;font-size:13px;padding:6px 14px;border-radius:20px;border:1px solid #eee;">'+(s.stoploss||'')+'</span>'
+          + '</div></div>';
+      }
+      container.innerHTML = html;
+      return true;
+    }
+
     async function triggerLSAI() {
       var el = document.getElementById('ls-ai-content');
       el.innerHTML = '<div class="ls-loading">分析生成中</div>';
       try {
         var resp = await fetch('/api/ai/ls_analysis?symbol=' + encodeURIComponent(_lsSymbol));
         var result = await resp.json();
-        el.innerHTML = result.analysis || '<span style="color:'+_C.red+'">分析生成失败</span>';
+        if (result.structured && !renderLSAnalysisV2(result.structured, el)) {
+          el.innerHTML = result.analysis || '<span style="color:'+_C.red+'">分析生成失败</span>';
+        } else if (!result.structured) {
+          el.innerHTML = result.analysis || '<span style="color:'+_C.red+'">分析生成失败</span>';
+        }
       } catch(e) { el.innerHTML = '<span style="color:'+_C.red+'">分析服务连接失败</span>'; }
     }
   </script>
