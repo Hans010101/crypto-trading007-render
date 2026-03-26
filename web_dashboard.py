@@ -816,7 +816,7 @@ async def api_ai_ls_analysis(symbol: str):
         "topPos": f"{base}/topLongShortPositionRatio?symbol={symbol}&period=5m&limit=30",
         "globalLS": f"{base}/globalLongShortAccountRatio?symbol={symbol}&period=5m&limit=30",
         "taker": f"{base}/takerlongshortRatio?symbol={symbol}&period=5m&limit=30",
-        "basis": f"{base}/basis?symbol={symbol}&period=5m&limit=30&contractType=PERPETUAL",
+        "basis": f"{base}/basis?pair={symbol}&period=5m&limit=30&contractType=PERPETUAL",
     }
     d = {}
     try:
