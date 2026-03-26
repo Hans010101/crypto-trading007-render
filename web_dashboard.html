@@ -2842,19 +2842,12 @@
 
     async function triggerLSAI() {
       var el = document.getElementById('ls-ai-content');
-      el.innerHTML = '<div class="ls-loading">AI 分析生成中</div>';
-      var d = _lsRawData; var s = _lsSymbol + ' 最近30个5分钟周期数据摘要:\n';
-      if (d.oi && d.oi.length) { var L=d.oi[d.oi.length-1],F=d.oi[0]; s += '持仓量: '+parseFloat(L.sumOpenInterest).toFixed(0)+' (价值$'+(parseFloat(L.sumOpenInterestValue)/1e6).toFixed(1)+'M), 变化: '+((parseFloat(L.sumOpenInterest)/parseFloat(F.sumOpenInterest)-1)*100).toFixed(2)+'%\n'; }
-      if (d.topAcc && d.topAcc.length) { var l=d.topAcc[d.topAcc.length-1]; s += '大户账户多空比: '+parseFloat(l.longShortRatio).toFixed(3)+' (多'+l.longAccount+'%/空'+l.shortAccount+'%)\n'; }
-      if (d.topPos && d.topPos.length) { var l=d.topPos[d.topPos.length-1]; s += '大户持仓多空比: '+parseFloat(l.longShortRatio).toFixed(3)+' (多'+l.longAccount+'%/空'+l.shortAccount+'%)\n'; }
-      if (d.globalLS && d.globalLS.length) { var l=d.globalLS[d.globalLS.length-1]; s += '多空人数比: '+parseFloat(l.longShortRatio).toFixed(3)+' (多'+l.longAccount+'%/空'+l.shortAccount+'%)\n'; }
-      if (d.taker && d.taker.length) { var l=d.taker[d.taker.length-1]; s += '主动买卖比: '+parseFloat(l.buySellRatio).toFixed(3)+' (买'+parseFloat(l.buyVol).toFixed(0)+'/卖'+parseFloat(l.sellVol).toFixed(0)+')\n'; }
-      if (d.basis && d.basis.length) { var l=d.basis[d.basis.length-1]; s += '基差率: '+(parseFloat(l.basisRate)*100).toFixed(4)+'% (合约$'+parseFloat(l.futuresPrice).toFixed(2)+'/指数$'+parseFloat(l.indexPrice).toFixed(2)+')\n'; }
+      el.innerHTML = '<div class="ls-loading">分析生成中</div>';
       try {
-        var resp = await fetch('/api/ai/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message: '请根据以下'+_lsSymbol+'合约的实时多空博弈数据，给出专业分析：\n'+s+'\n要求：1)分析多空力量对比 2)识别异常信号 3)给出短线操作建议 4)风险提示。用中文回答，简明扼要。'}) });
+        var resp = await fetch('/api/ai/ls_analysis?symbol=' + encodeURIComponent(_lsSymbol));
         var result = await resp.json();
-        el.innerHTML = result.reply || '<span style="color:'+_C.red+'">分析生成失败</span>';
-      } catch(e) { el.innerHTML = '<span style="color:'+_C.red+'">AI 服务连接失败</span>'; }
+        el.innerHTML = result.analysis || '<span style="color:'+_C.red+'">分析生成失败</span>';
+      } catch(e) { el.innerHTML = '<span style="color:'+_C.red+'">分析服务连接失败</span>'; }
     }
   </script>
 
