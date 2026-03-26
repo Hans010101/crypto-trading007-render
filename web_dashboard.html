@@ -2625,7 +2625,6 @@
       document.getElementById('ls-modal').classList.add('active');
       document.getElementById('ls-ai-content').innerHTML = '<div class="ls-loading">加载中</div>';
       loadLSData();
-      _lsTimer = setInterval(loadLSData, 30000);
     }
     function closeLSModal() {
       document.getElementById('ls-modal').classList.remove('active');
