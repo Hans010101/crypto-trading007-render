@@ -2638,13 +2638,14 @@
     async function loadLSData() {
       var sym = _lsSymbol;
       try {
+        var safeFetch = function(url) { return fetch(url).then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); }).catch(function(e){ console.warn('LS fetch fail:', url, e); return []; }); };
         var [oi, topAcc, topPos, globalLS, taker, basis] = await Promise.all([
-          fetch('/api/binance/oi_history?symbol=' + sym).then(function(r){return r.json();}),
-          fetch('/api/binance/top_ls_account?symbol=' + sym).then(function(r){return r.json();}),
-          fetch('/api/binance/top_ls_position?symbol=' + sym).then(function(r){return r.json();}),
-          fetch('/api/binance/global_ls?symbol=' + sym).then(function(r){return r.json();}),
-          fetch('/api/binance/taker_volume?symbol=' + sym).then(function(r){return r.json();}),
-          fetch('/api/binance/basis?symbol=' + sym).then(function(r){return r.json();})
+          safeFetch('/api/binance/oi_history?symbol=' + sym),
+          safeFetch('/api/binance/top_ls_account?symbol=' + sym),
+          safeFetch('/api/binance/top_ls_position?symbol=' + sym),
+          safeFetch('/api/binance/global_ls?symbol=' + sym),
+          safeFetch('/api/binance/taker_volume?symbol=' + sym),
+          safeFetch('/api/binance/basis?symbol=' + sym)
         ]);
         _lsRawData = { oi: oi, topAcc: topAcc, topPos: topPos, globalLS: globalLS, taker: taker, basis: basis };
         renderOI(oi); renderRatio('ls-chart-top-account', 'ls-val-top-account', topAcc);
