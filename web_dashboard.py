@@ -729,107 +729,69 @@ async def api_ai_analysis(symbol: str):
     return JSONResponse(content={"analysis": analysis})
 
 
-def _parse_ls_ai_response(raw_text: str):
-    """Parse LLM JSON response with enhanced fallback."""
-    text = raw_text.strip()
-    # Strip markdown code block wrappers
-    text = re.sub(r'^```(?:json)?\s*\n?', '', text)
-    text = re.sub(r'\n?\s*```\s*$', '', text)
-    # Try direct parse
-    try:
-        data = json.loads(text)
-        if 'direction' in data:
-            return data
-    except (json.JSONDecodeError, TypeError):
-        pass
-    # Extract first JSON object from surrounding text
-    match = re.search(r'\{[\s\S]*\}', text)
-    if match:
-        try:
-            data = json.loads(match.group())
-            if 'direction' in data:
-                return data
-        except (json.JSONDecodeError, TypeError):
-            pass
-    return None
+def _parse_ls_dimensions(text: str):
+    """Parse LLM text into 3 dimensions by splitting on --- markers."""
+    parts = re.split(r'\n---+\n', text.strip())
+    dimensions = {}
+    strategy_text = ''
+    mapping = {
+        '资金': ('funding', '资金面'),
+        '机构': ('institution', '机构面'),
+        '情绪': ('sentiment', '情绪面'),
+    }
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        matched = False
+        for keyword, (key, title) in mapping.items():
+            if keyword in part[:10]:
+                lines = part.split('\n', 1)
+                content = lines[1].strip() if len(lines) > 1 else part
+                dimensions[key] = {'title': title, 'content': content}
+                matched = True
+                break
+        if not matched and '策略' in part[:10]:
+            lines = part.split('\n', 1)
+            strategy_text = lines[1].strip() if len(lines) > 1 else part
+    return dimensions, strategy_text
 
 
-LS_AI_ANALYSIS_PROMPT = """你是一位专业的加密货币合约交易分析师。根据以下多空博弈数据，输出结构化的深度分析。
+LS_AI_ANALYSIS_PROMPT = """你是一位专业的加密货币合约交易分析师。根据以下多空博弈数据，按三个维度输出深度分析。
 
 ## 输入数据说明
-- OI (持仓量): openInterest, oiChange (变化百分比), oiChangeValue (变化金额)
-- 大户账户多空比: topTraderAccountRatio (>1偏多, <1偏空)
-- 大户持仓多空比: topTraderPositionRatio (>1偏多, <1偏空)
-- 全市场多空人数比: globalLongShortRatio (>1偏多, <1偏空)
-- 主动买卖比: takerBuySellRatio (>1买方主导, <1卖方主导)
-- 基差率: basisRate (正=升水看涨, 负=贴水看跌)
+- OI (持仓量): 变化百分比和金额反映资金流入/流出
+- 大户账户多空比: >1偏多, <1偏空
+- 大户持仓多空比: >1偏多, <1偏空
+- 全市场多空人数比: >1偏多, <1偏空（散户极度偏多时反而是风险信号）
+- 主动买卖比: >1买方主导, <1卖方主导
+- 基差率: 正=升水看涨, 负=贴水看跌
 
-## 判断规则
-对以下 6 项逐一判断多/空：
-1. OI变化: 增仓=多, 减仓=空
-2. 大户账户比: >1=多, <1=空
-3. 大户持仓比: >1=多, <1=空
-4. 全市场人数比: >1=多, <1=空（注意：散户极度偏多时反而是风险信号）
-5. 主动买卖比: >1=多, <1=空
-6. 基差率: >0=多, <0=空
+## 输出格式要求
+请严格按以下格式输出，用 --- 分隔各段，每段开头必须是维度名称：
 
-看多数量：
-- 5-6项看多 = "偏多"
-- 3-4项看多 = 根据权重综合判断，偏多则"偏多"，偏空则"偏空"，均衡则"震荡"
-- 0-2项看多 = "偏空"
-
-## 输出要求
-请严格按以下 JSON 格式输出，不要输出任何其他内容：
-
-```json
-{
-  "direction": "偏多" | "偏空" | "震荡",
-  "bullCount": 4,
-  "totalCount": 6,
-  "conflictNote": "持仓量偏空、基差偏空，注意分歧",
-  "analysis": {
-    "funding": {
-      "title": "资金面",
-      "content": "OI 减仓 -1.1%（$1.89M），部分资金撤离。主动买卖比 1.770，买方占明显优势，多头在主动进攻。资金撤离但买方仍在，可能是空头平仓，下跌空间有限。"
-    },
-    "institution": {
-      "title": "机构面",
-      "content": "大户账户比 1.507（多60.1%），持仓比 1.070（多51.7%），方向一致偏多，机构整体看好后市。"
-    },
-    "sentiment": {
-      "title": "情绪面",
-      "content": "散户人数比 1.789（多64.1%），散户极度偏多，需警惕反向收割风险。基差 -0.1300% 贴水，合约折价，市场情绪偏悲观。散户偏多但基差贴水，情绪面出现背离，多头需谨慎。"
-    }
-  },
-  "anomalies": [
-    "持仓量短时骤降 17.8%，资金撤离信号明显",
-    "大户账户看空但持仓看多，可能在底部建仓",
-    "散户极度偏多 (64.1%)，警惕反向收割"
-  ],
-  "strategy": {
-    "summary": "多方略占优势，但持仓量偏空、基差偏空，存在分歧。方向偏多但分歧尚存，建议轻仓试探或等待信号进一步确认。",
-    "action": "轻仓试多",
-    "position": "仓位 ≤15%",
-    "stoploss": "严格止损"
-  }
-}
-```
+资金面
+综合分析 OI变化和主动买卖比的内容（必须包含具体数值）
+---
+机构面
+综合分析大户账户比和持仓比的内容（必须包含具体数值，如果方向矛盾要指出）
+---
+情绪面
+综合分析全市场人数比和基差率的内容（必须包含具体数值，注意背离信号）
+---
+策略参考
+综合以上三个维度给出操作建议（1-2句话）
 
 ## 分析要求
-1. 资金面：综合 OI变化 和 主动买卖比，分析资金流向和买卖力量对比，给出结论性判断
-2. 机构面：综合 大户账户比 和 大户持仓比，分析机构态度，注意账户比和持仓比方向不一致的情况
-3. 情绪面：综合 全市场人数比 和 基差率，分析散户情绪和市场预期，注意背离信号
-4. 异常信号：找出数据中的矛盾或极端值（如OI骤降>10%、散户比>1.5、大户账户与持仓方向相反等）
-5. 策略建议：根据综合判断给出操作方向、仓位建议、风控提示
-6. content 中要包含具体数据数值，不要只说定性结论
-7. 如果某个维度的两个指标方向矛盾，要明确指出并分析原因
-
-重要：只输出 JSON，不要输出任何其他文字、解释或 markdown 代码块标记。"""
+1. 每个维度必须包含具体数据数值，不要只说定性结论
+2. 如果同一维度内两个指标方向矛盾，要明确指出并分析原因
+3. 每个维度的分析控制在2-3句话以内，简洁有力
+4. 策略参考要给出明确的操作方向建议"""
 
 
 @app.get("/api/ai/ls_analysis")
 async def api_ai_ls_analysis(symbol: str):
-    """L/S analysis: try LLM structured JSON, fallback to template."""
+    """L/S analysis: backend computes structured data, LLM provides text."""
     base = "https://fapi.binance.com/futures/data"
     urls = {
         "oi": f"{base}/openInterestHist?symbol={symbol}&period=5m&limit=30",
@@ -871,16 +833,96 @@ async def api_ai_ls_analysis(symbol: str):
         if abs(v) >= 1e6: return f"${v/1e6:.2f}M"
         return f"${v:,.0f}"
 
-    # Build data summary for LLM
-    data_summary = f"""## {symbol} 多空博弈数据
-- 持仓量(OI): {fmt_v(oi_last)}，变化 {oi_chg:+.2f}%（{fmt_v(oi_chg_val)}）
-- 大户账户多空比: {top_acc_r:.3f}（多头账户占比 {top_acc_l:.1f}%）
-- 大户持仓多空比: {top_pos_r:.3f}（多头持仓占比 {top_pos_l:.1f}%）
-- 全市场多空人数比: {global_r:.3f}（多头人数占比 {global_l:.1f}%）
-- 主动买卖比: {taker_r:.3f}
-- 基差率: {basis_rate:.4f}%"""
+    # === Build structured data directly (never null) ===
+    bull_signals = sum([oi_chg > 0, top_acc_r > 1, top_pos_r > 1, global_r > 1, taker_r > 1, basis_rate > 0])
+    conflicts = []
+    if oi_chg <= 0: conflicts.append('持仓量偏空')
+    if top_acc_r <= 1: conflicts.append('大户账户偏空')
+    if top_pos_r <= 1: conflicts.append('大户持仓偏空')
+    if global_r <= 1: conflicts.append('散户偏空')
+    if taker_r <= 1: conflicts.append('买卖比偏空')
+    if basis_rate <= 0: conflicts.append('基差偏空')
 
-    # Try LLM call
+    if bull_signals >= 5:
+        direction = '偏多'
+    elif bull_signals <= 1:
+        direction = '偏空'
+    elif bull_signals >= 4:
+        direction = '偏多'
+    elif bull_signals <= 2:
+        direction = '偏空'
+    else:
+        direction = '震荡'
+
+    # Anomalies
+    anomalies = []
+    if abs(oi_chg) > 3:
+        anomalies.append(f"持仓量短时{'暴增' if oi_chg > 0 else '骤降'} {abs(oi_chg):.1f}%，{'新资金入场' if oi_chg > 0 else '资金撤离'}信号明显")
+    if (top_acc_r > 1) != (top_pos_r > 1):
+        anomalies.append("大户账户与持仓方向相反，" + ("账户看多但持仓看空，存在对冲或诱多" if top_acc_r > 1 else "账户看空但持仓看多，可能在底部建仓"))
+    if global_r > 1.5:
+        anomalies.append(f"散户极度偏多 ({global_l:.1f}%)，警惕反向收割")
+    elif global_r < 0.67:
+        anomalies.append(f"散户极度偏空 ({global_l:.1f}%)，可能超卖反弹")
+    if top_acc_r > 1.5 or top_acc_r < 0.67:
+        anomalies.append(f"大户账户多空比 {top_acc_r:.3f} 处于极端值，{'大户集中做多' if top_acc_r > 1.5 else '大户集中做空'}")
+    if abs(taker_r - 1) > 0.15:
+        anomalies.append(f"主动买卖比 {taker_r:.3f} 偏离均衡，{'买方强势入场' if taker_r > 1 else '卖方大幅抛售'}")
+    if abs(basis_rate) > 0.05:
+        anomalies.append(f"基差率 {basis_rate:.4f}% 显著偏离，市场存在{'看涨' if basis_rate > 0 else '看跌'}情绪溢价")
+
+    conflict_note = '、'.join(conflicts[:3]) + '，注意分歧' if conflicts and bull_signals >= 2 and bull_signals <= 4 else ''
+
+    # Strategy labels
+    if direction == '偏多':
+        strategy = {'summary': '', 'action': '轻仓试多', 'position': '仓位 ≤20%', 'stoploss': '严格止损'}
+    elif direction == '偏空':
+        strategy = {'summary': '', 'action': '观望或试空', 'position': '仓位 ≤15%', 'stoploss': '严格止损'}
+    else:
+        strategy = {'summary': '', 'action': '观望等待', 'position': '仓位 ≤10%', 'stoploss': '区间操作'}
+
+    # Default dimension text (used when LLM is unavailable)
+    def _ratio_desc(r):
+        if r > 1.5: return "多头占绝对优势"
+        if r > 1.1: return "多头略占上风"
+        if r > 0.9: return "多空势均力敌"
+        if r > 0.7: return "空头略占上风"
+        return "空头占绝对优势"
+
+    oi_desc = "增仓" if oi_chg > 0 else "减仓"
+    default_analysis = {
+        'funding': {
+            'title': '资金面',
+            'content': f"OI {oi_desc} {oi_chg:+.2f}%（{fmt_v(oi_chg_val)}），{'资金流入，市场参与度增加' if oi_chg > 0 else '部分资金撤离'}。"
+                       f"主动买卖比 {taker_r:.3f}，{'买方占优势，多头在主动进攻' if taker_r > 1 else '卖方占优势，空头在主动抛售'}。"
+                       + (f"资金{'流入' if oi_chg > 0 else '撤离'}但{'买' if taker_r > 1 else '卖'}方仍占优，{'趋势有望延续' if (oi_chg > 0) == (taker_r > 1) else '信号存在分歧'}。" if abs(oi_chg) > 0.5 else "")
+        },
+        'institution': {
+            'title': '机构面',
+            'content': f"大户账户比 {top_acc_r:.3f}（多 {top_acc_l:.1f}%），{_ratio_desc(top_acc_r)}。"
+                       f"持仓比 {top_pos_r:.3f}（多 {top_pos_l:.1f}%），{_ratio_desc(top_pos_r)}。"
+                       + (f"账户与持仓方向一致偏{'多' if top_acc_r > 1 else '空'}，机构态度明确。" if (top_acc_r > 1) == (top_pos_r > 1) else "账户与持仓方向相反，大户内部存在分歧，需谨慎解读。")
+        },
+        'sentiment': {
+            'title': '情绪面',
+            'content': f"散户人数比 {global_r:.3f}（多 {global_l:.1f}%），{'散户偏多' if global_r > 1 else '散户偏空'}。"
+                       f"基差 {basis_rate:.4f}%{'升水' if basis_rate > 0 else '贴水'}，{'合约溢价，看涨预期' if basis_rate > 0 else '合约折价，看跌预期'}。"
+                       + ("散户偏多但基差贴水，情绪面出现背离，多头需谨慎。" if global_r > 1 and basis_rate < 0 else
+                          ("散户偏空但基差升水，可能存在超跌反弹机会。" if global_r < 1 and basis_rate > 0 else ""))
+        }
+    }
+
+    structured = {
+        'direction': direction,
+        'bullCount': bull_signals,
+        'totalCount': 6,
+        'conflictNote': conflict_note,
+        'analysis': default_analysis,
+        'anomalies': anomalies,
+        'strategy': strategy
+    }
+
+    # === Try LLM for better text analysis ===
     api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("DEEPSEEK_API_KEY")
     api_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
     model = os.environ.get("LLM_MODEL", "gpt-3.5-turbo")
@@ -889,7 +931,14 @@ async def api_ai_ls_analysis(symbol: str):
         api_base = "https://api.deepseek.com/v1"
         model = "deepseek-chat"
 
-    structured = None
+    data_summary = f"""## {symbol} 多空博弈数据
+- 持仓量(OI): {fmt_v(oi_last)}，变化 {oi_chg:+.2f}%（{fmt_v(oi_chg_val)}）
+- 大户账户多空比: {top_acc_r:.3f}（多头账户占比 {top_acc_l:.1f}%）
+- 大户持仓多空比: {top_pos_r:.3f}（多头持仓占比 {top_pos_l:.1f}%）
+- 全市场多空人数比: {global_r:.3f}（多头人数占比 {global_l:.1f}%）
+- 主动买卖比: {taker_r:.3f}
+- 基差率: {basis_rate:.4f}%"""
+
     if api_key:
         try:
             async with httpx.AsyncClient(timeout=30) as client:
@@ -906,97 +955,43 @@ async def api_ai_ls_analysis(symbol: str):
                 )
                 if resp.status_code == 200:
                     raw = resp.json()["choices"][0]["message"]["content"]
-                    structured = _parse_ls_ai_response(raw)
+                    dims, strat_text = _parse_ls_dimensions(raw)
+                    if dims:
+                        structured['analysis'] = dims
+                    if strat_text:
+                        structured['strategy']['summary'] = strat_text
         except Exception:
             pass
 
-    # Always build template fallback HTML
-    bull_signals = sum([top_acc_r > 1, top_pos_r > 1, global_r > 1, taker_r > 1, oi_chg > 0, basis_rate > 0])
-    if bull_signals >= 4:
-        bias, bias_color, bias_icon = "偏多", "var(--gain)", "🟢"
-    elif bull_signals <= 2:
-        bias, bias_color, bias_icon = "偏空", "var(--loss)", "🔴"
-    else:
-        bias, bias_color, bias_icon = "多空均衡", "var(--text-muted)", "🟡"
-
+    # Build fallback HTML (for analysis field)
     def clr(v, threshold=0):
         return "var(--gain)" if v > threshold else ("var(--loss)" if v < threshold else "var(--text-muted)")
 
-    def ratio_desc(r):
-        if r > 1.5: return "多头占绝对优势"
-        if r > 1.1: return "多头略占上风"
-        if r > 0.9: return "多空势均力敌"
-        if r > 0.7: return "空头略占上风"
-        return "空头占绝对优势"
-
-    oi_desc = "增仓" if oi_chg > 0 else "减仓"
-    taker_desc = "主动买入力量较强" if taker_r > 1 else "主动卖出力量较强"
-    basis_desc = "正溢价（看涨预期）" if basis_rate > 0 else "负溢价（看跌预期）"
-
-    anomalies = []
-    if abs(oi_chg) > 3:
-        anomalies.append(f"持仓量短时{'暴增' if oi_chg > 0 else '骤降'} {abs(oi_chg):.1f}%，{'新资金入场' if oi_chg > 0 else '资金撤离'}信号明显")
-    if top_acc_r > 1.5 or top_acc_r < 0.67:
-        anomalies.append(f"大户账户多空比 {top_acc_r:.3f} 处于极端值，{'大户集中做多' if top_acc_r > 1.5 else '大户集中做空'}")
-    if abs(taker_r - 1) > 0.15:
-        anomalies.append(f"主动买卖比 {taker_r:.3f} 偏离均衡，{'买方aggressively入场' if taker_r > 1 else '卖方大幅抛售'}")
-    if abs(basis_rate) > 0.05:
-        anomalies.append(f"基差率 {basis_rate:.4f}% 显著偏离，市场存在{'看涨' if basis_rate > 0 else '看跌'}情绪溢价")
-    if top_acc_r > 1 and top_pos_r < 1:
-        anomalies.append("大户账户看多但持仓看空，存在对冲或诱多迹象")
-    elif top_acc_r < 1 and top_pos_r > 1:
-        anomalies.append("大户账户看空但持仓看多，可能在底部建仓")
+    bias_color = "var(--gain)" if direction == '偏多' else ("var(--loss)" if direction == '偏空' else "var(--text-muted)")
+    bias_icon = "🟢" if direction == '偏多' else ("🔴" if direction == '偏空' else "🟡")
     anomaly_html = "".join(f"<div style='margin:3px 0;'>⚡ {a}</div>" for a in anomalies) if anomalies else "<div style='color:var(--text-muted);'>当前无明显异常信号</div>"
 
     html = f"""
     <div style="margin-bottom:16px;">
-      <div style="font-size:18px;font-weight:700;color:{bias_color};margin-bottom:8px;">{bias_icon} 综合研判：{bias} ({bull_signals}/6 项看多)</div>
+      <div style="font-size:18px;font-weight:700;color:{bias_color};margin-bottom:8px;">{bias_icon} 综合研判：{direction} ({bull_signals}/6 项看多)</div>
     </div>
     <div style="margin-bottom:14px;">
       <strong style="color:var(--text-primary);">📊 持仓量分析</strong><br>
       <div style="color:var(--text-secondary);margin-top:4px;">
         持仓总价值 <span style="color:var(--text-primary);font-weight:600;">{fmt_v(oi_last)}</span>，
         2.5h 内<span style="color:{clr(oi_chg)};font-weight:600;">{oi_desc} {oi_chg:+.2f}%</span>。
-        {'资金持续流入，市场参与度增加，利于趋势延续。' if oi_chg > 0 else '资金退出，市场分歧加大，短线波动可能加剧。'}
       </div>
     </div>
     <div style="margin-bottom:14px;">
       <strong style="color:var(--text-primary);">🐋 大户动向</strong><br>
       <div style="color:var(--text-secondary);margin-top:4px;">
-        账户多空比 <span style="color:{clr(top_acc_r, 1)};font-weight:600;">{top_acc_r:.3f}</span>（多 {top_acc_l:.1f}%），{ratio_desc(top_acc_r)}。<br>
-        持仓多空比 <span style="color:{clr(top_pos_r, 1)};font-weight:600;">{top_pos_r:.3f}</span>（多 {top_pos_l:.1f}%），{ratio_desc(top_pos_r)}。
-      </div>
-    </div>
-    <div style="margin-bottom:14px;">
-      <strong style="color:var(--text-primary);">👥 散户情绪</strong><br>
-      <div style="color:var(--text-secondary);margin-top:4px;">
-        全市场多空人数比 <span style="color:{clr(global_r, 1)};font-weight:600;">{global_r:.3f}</span>（多 {global_l:.1f}%），{ratio_desc(global_r)}。
-        {'散户偏多，需警惕反向收割风险。' if global_r > 1.2 else ('散户偏空，逆向指标显示可能见底。' if global_r < 0.8 else '散户情绪中性。')}
-      </div>
-    </div>
-    <div style="margin-bottom:14px;">
-      <strong style="color:var(--text-primary);">💥 主动买卖</strong><br>
-      <div style="color:var(--text-secondary);margin-top:4px;">
-        买卖比 <span style="color:{clr(taker_r, 1)};font-weight:600;">{taker_r:.3f}</span>，{taker_desc}。
-        {'多头在主动进攻，短线偏强。' if taker_r > 1.05 else ('空头在主动抛售，短线偏弱。' if taker_r < 0.95 else '买卖力量基本均衡。')}
-      </div>
-    </div>
-    <div style="margin-bottom:14px;">
-      <strong style="color:var(--text-primary);">📐 基差信号</strong><br>
-      <div style="color:var(--text-secondary);margin-top:4px;">
-        基差率 <span style="color:{clr(basis_rate)};font-weight:600;">{basis_rate:.4f}%</span>，{basis_desc}。
-        {'期货溢价较高，市场看涨情绪浓厚，但需防高位回调。' if basis_rate > 0.02 else ('期货折价，空头主导，但深度折价往往暗示超卖反弹机会。' if basis_rate < -0.02 else '基差处于正常范围，期现价格基本一致。')}
+        账户多空比 <span style="color:{clr(top_acc_r, 1)};font-weight:600;">{top_acc_r:.3f}</span>（多 {top_acc_l:.1f}%），{_ratio_desc(top_acc_r)}。<br>
+        持仓多空比 <span style="color:{clr(top_pos_r, 1)};font-weight:600;">{top_pos_r:.3f}</span>（多 {top_pos_l:.1f}%），{_ratio_desc(top_pos_r)}。
       </div>
     </div>
     <div style="margin-bottom:14px;">
       <strong style="color:var(--text-primary);">⚠️ 异常信号检测</strong><br>
       <div style="color:var(--text-secondary);margin-top:4px;">{anomaly_html}</div>
-    </div>
-    <div style="padding:10px;background:var(--bg-hover);border-radius:8px;border:1px solid var(--border-color);">
-      <strong style="color:var(--text-primary);">📌 操作建议</strong><br>
-      <div style="color:var(--text-secondary);margin-top:4px;">
-        {'大户与散户均偏多，持仓增加，建议顺势做多，回调至支撑位可加仓。止损设在近期低点下方。' if bull_signals >= 5 else ('多项指标偏空，建议谨慎持仓或轻仓做空。关注持仓量变化，若出现放量反弹应及时止损。' if bull_signals <= 1 else '多空信号交织，建议观望为主。若选择入场，控制仓位在20%以内，严格设置止损。')}
-      </div>
     </div>
     """
     return JSONResponse(content={"analysis": html, "structured": structured})
